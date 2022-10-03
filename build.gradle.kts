@@ -48,9 +48,10 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "FuckJY"
-            packageVersion = "1.0.0"
+            packageVersion = "1.0.1"
             windows {
                 shortcut = true
+                upgradeUuid = "96c7e128-6738-469c-a9fe-ddc46ef0204f"
             }
         }
     }

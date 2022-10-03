@@ -116,15 +116,15 @@ fun PasswordOperation() {
     var isError by remember { mutableStateOf(false) }
 
     fun decrypt() {
-        if (input.length % 4 != 0) {
-            result = "输入长度必须为4的倍数"
+        if (input.length % 8 != 0) {
+            result = "输入长度必须为 8 的倍数"
             isError = true
         } else {
             try {
                 result = decrypt(input)
                 isError = false
             } catch (e: NumberFormatException) {
-                result = "输入必须为有效的16进制数字\n${e.message}"
+                result = "输入必须为有效的 16 进制数字\n${e.message}"
                 isError = true
             } catch (e: Throwable) {
                 result = "出现未知错误\n${e.message}\n${e.stackTrace}"
@@ -199,14 +199,24 @@ fun decrypt(input: String): String {
         // 将两个 Byte 合并起来，这个 String 理论上只会有 1 个字符
         result += String(byteArrayOf(array[i - 1], array[i]), Charsets.UTF_16LE)
     }
+
+    println(result)
+
     return result
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
 fun encrypt(input: String): String {
     val plain = "$input\u0000"  // 明文密码，添加了空字符
-    // 编码并声明从索引 1 开始，此处 1u 相当于 uint 1
-    val data = ubyteArrayOf(1u, *plain.toByteArray(Charsets.UTF_16LE).asUByteArray(), 1u)
+    // 编码并声明从索引 1 开始并将位数补齐为 4 的倍数避免编码问题，此处 1u 相当于 uint 1
+    val data = ubyteArrayOf(
+        1u,
+        *plain.toByteArray(Charsets.UTF_16LE).asUByteArray(),
+        *UByteArray((plain.length - 1) % 2 * 2) { 0u },
+        1u
+    )
+    println((plain.length - 1) % 2)
+    println(data.toTypedArray().toList())
     var result = ""
 
     for (i in data.indices) {   // 相当于 for (int i = 0; i < data.length; i ++)
@@ -216,6 +226,8 @@ fun encrypt(input: String): String {
             data[i] xor 0x4cu xor 0x43u
         }.toString(16).padStart(2, '0')  // 将 Byte 转成 16 进制的 String 并在前面补 0
     }
+
+    println(result)
 
     return result
 }
