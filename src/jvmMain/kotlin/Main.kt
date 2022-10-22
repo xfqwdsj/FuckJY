@@ -1,4 +1,3 @@
-// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -13,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposeWindow
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -21,6 +21,8 @@ import androidx.compose.ui.window.application
 import kotlinx.coroutines.launch
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
+import java.io.File
+import java.nio.charset.Charset
 import kotlin.experimental.xor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,7 +35,7 @@ fun App(
 
     var currentPage by remember { mutableStateOf(0) }
 
-    @OptIn(ExperimentalMaterial3Api::class) val drawerContent: @Composable ColumnScope.() -> Unit = {
+    val drawerContent: @Composable ColumnScope.() -> Unit = {
         Spacer(modifier = Modifier.height(12.dp))
         NavigationDrawerItem(label = {
             Text("密码处理")
@@ -67,6 +69,7 @@ fun App(
             drawerState = drawerState,
             //gesturesEnabled = windowSize == WindowSize.Compact
         ) {
+            val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarScrollState())
 
             Scaffold(topBar = {
                 SmallTopAppBar(title = {
@@ -75,10 +78,13 @@ fun App(
                     IconButton(onClick = { coroutineScope.launch { drawerState.open(windowSize) } }) {
                         Icon(Icons.Default.Menu, contentDescription = "菜单")
                     }
-                })
+                }, scrollBehavior = scrollBehavior
+                )
             }) { padding ->
                 Box(Modifier.padding(padding)) {
-                    Crossfade(currentPage) { page ->
+                    Crossfade(
+                        currentPage, modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                    ) { page ->
                         when (page) {
                             0 -> PasswordOperation()
                             1 -> ProcessOperation()
@@ -124,10 +130,10 @@ fun PasswordOperation() {
                 result = decrypt(input)
                 isError = false
             } catch (e: NumberFormatException) {
-                result = "输入必须为有效的 16 进制数字\n${e.message}"
+                result = "输入必须为有效的 16 进制数字\n${e.message}".trim()
                 isError = true
             } catch (e: Throwable) {
-                result = "出现未知错误\n${e.message}\n${e.stackTrace}"
+                result = "出现未知错误\n${e.message}\n${e.stackTrace}".trim()
                 isError = true
             }
         }
@@ -138,6 +144,68 @@ fun PasswordOperation() {
         result = encrypt(input)
         isError = false
         showResult = true
+    }
+
+    fun get() {
+        input = ProcessBuilder(
+            "reg", "query", "HKLM\\SOFTWARE\\TopDomain\\e-Learning Class\\Student", "/v", "Knock1", "/reg:32"
+        ).start().apply { waitFor() }.inputStream.bufferedReader().readText().substring(94)
+            .substringBefore('\n').run { substring(0, length - 1) }
+        decrypt()
+    }
+
+    fun set() {
+        val vbsFile = File(System.getProperty("java.io.tmpdir"), "set-fuckjy.tmp.vbs").apply {
+            deleteOnExit()
+            try {
+                writeText(
+                    "Set objShell = CreateObject(\"Shell.Application\")\n" +
+                            "objShell.ShellExecute \"cmd\", \"/c reg add " +
+                            "\"\"HKLM\\SOFTWARE\\TopDomain\\e-Learning Class\\Student\"\" /v Knock1 /t REG_BINARY /d " +
+                            "${encrypt(input)} /f /reg:32 > ${System.getProperty("java.io.tmpdir")}result-fuckjy 2> " +
+                            "${System.getProperty("java.io.tmpdir")}error-fuckjy\", \"\", " + "\"runas\", 0"
+                )
+            } catch (e: Throwable) {
+                result = "出现未知错误\n${e.message}\n${e.stackTrace}"
+                isError = true
+                showResult = true
+                return
+            }
+        }
+        ProcessBuilder(
+            "CScript", vbsFile.absolutePath
+        ).start().apply { waitFor() }.errorStream.bufferedReader(Charset.forName("GBK")).readText().trim().let {
+            if (it.isNotBlank()) {
+                result = it
+                isError = true
+                showResult = true
+                return
+            }
+        }
+        vbsFile.delete()
+        File(System.getProperty("java.io.tmpdir"), "error-fuckjy").apply {
+            deleteOnExit()
+            if (exists()) {
+                readText(Charset.forName("GBK")).trim().let {
+                    if (it.isNotBlank()) {
+                        result = it
+                        isError = true
+                        showResult = true
+                        return
+                    }
+                }
+                delete()
+            }
+        }
+        File(System.getProperty("java.io.tmpdir"), "result-fuckjy").apply {
+            deleteOnExit()
+            if (exists()) {
+                result = readText(Charset.forName("GBK")).trim()
+                isError = false
+                showResult = true
+                delete()
+            }
+        }
     }
 
     fun replace() {
@@ -160,6 +228,14 @@ fun PasswordOperation() {
             Spacer(Modifier.width(16.dp))
             Button(onClick = ::encrypt) {
                 Text("加密")
+            }
+            Spacer(Modifier.width(16.dp))
+            Button(onClick = ::get) {
+                Text("直接获取密码")
+            }
+            Spacer(Modifier.width(16.dp))
+            Button(onClick = ::set) {
+                Text("直接设置密码")
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -188,19 +264,17 @@ fun PasswordOperation() {
 
 fun decrypt(input: String): String {
     val array = input.toHex()   // 把输入的 16 进制字符串（如 1234abcd）转换成 ByteArray
-    val zero = array[0] xor 0x50 xor 0x45   // 解密第 1 个 Byte 获得密码起始位置
+    val zero = array[0] xor 0x15   // 解密第 1 个 Byte 获得密码起始位置
     var result = ""
 
     for (i in zero..array.lastIndex) {  // 相当于 for (int i = zero; i < array.length; i ++)，Kotlin 中没有该写法
         // 根据余数判断处理方法，异或运算没有顺序
-        array[i] = if (i % 4 == 0 || i % 4 == 3) array[i] xor 0x50 xor 0x45 else array[i] xor 0x4c xor 0x43
+        array[i] = if (i % 4 == 0 || i % 4 == 3) array[i] xor 0x15 else array[i] xor 0x0f
         if ((i - zero) % 2 == 0) continue   // 由于是 UTF-16LE，所以需要两个 Byte 一起读取
         if (array[i - 1].toInt() == 0 && array[i].toInt() == 0) break   // 读取到空字符直接跳出
         // 将两个 Byte 合并起来，这个 String 理论上只会有 1 个字符
         result += String(byteArrayOf(array[i - 1], array[i]), Charsets.UTF_16LE)
     }
-
-    println(result)
 
     return result
 }
@@ -210,24 +284,17 @@ fun encrypt(input: String): String {
     val plain = "$input\u0000"  // 明文密码，添加了空字符
     // 编码并声明从索引 1 开始并将位数补齐为 4 的倍数避免编码问题，此处 1u 相当于 uint 1
     val data = ubyteArrayOf(
-        1u,
-        *plain.toByteArray(Charsets.UTF_16LE).asUByteArray(),
-        *UByteArray((plain.length - 1) % 2 * 2) { 0u },
-        1u
+        1u, *plain.toByteArray(Charsets.UTF_16LE).asUByteArray(), *UByteArray((plain.length - 1) % 2 * 2) { 0u }, 1u
     )
-    println((plain.length - 1) % 2)
-    println(data.toTypedArray().toList())
     var result = ""
 
     for (i in data.indices) {   // 相当于 for (int i = 0; i < data.length; i ++)
         result += if (i % 4 == 0 || i % 4 == 3) {
-            data[i] xor 0x50u xor 0x45u
+            data[i] xor 0x15u
         } else {
-            data[i] xor 0x4cu xor 0x43u
+            data[i] xor 0x0fu
         }.toString(16).padStart(2, '0')  // 将 Byte 转成 16 进制的 String 并在前面补 0
     }
-
-    println(result)
 
     return result
 }
