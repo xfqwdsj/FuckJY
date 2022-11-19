@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.launch
+import org.jetbrains.skia.impl.Log
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.io.File
@@ -35,26 +36,35 @@ fun App(
 
     var currentPage by remember { mutableStateOf(0) }
 
-    val drawerContent: @Composable ColumnScope.() -> Unit = {
-        Spacer(modifier = Modifier.height(12.dp))
-        NavigationDrawerItem(label = {
-            Text("密码处理")
-        }, selected = currentPage == 0, onClick = {
-            currentPage = 0
-            coroutineScope.launch {
-                drawerState.close()
-            }
-        }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-        )
-        NavigationDrawerItem(label = {
-            Text("进程操作")
-        }, selected = currentPage == 1, onClick = {
-            currentPage = 1
-            coroutineScope.launch {
-                drawerState.close()
-            }
-        }, modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-        )
+    val drawerContent: @Composable () -> Unit = {
+        ModalDrawerSheet {
+            Spacer(modifier = Modifier.height(12.dp))
+            NavigationDrawerItem(
+                label = {
+                    Text("密码处理")
+                },
+                selected = currentPage == 0, onClick = {
+                    currentPage = 0
+                    coroutineScope.launch {
+                        drawerState.close()
+                    }
+                },
+                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+            )
+            NavigationDrawerItem(
+                label = {
+                    Text("进程操作")
+                },
+                selected = currentPage == 1,
+                onClick = {
+                    currentPage = 1
+                    coroutineScope.launch {
+                        drawerState.close()
+                    }
+                },
+                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+            )
+        }
     }
 
     MaterialTheme(
@@ -69,18 +79,22 @@ fun App(
             drawerState = drawerState,
             //gesturesEnabled = windowSize == WindowSize.Compact
         ) {
-            val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(rememberTopAppBarScrollState())
+            val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
-            Scaffold(topBar = {
-                SmallTopAppBar(title = {
-                    Text("FuckJY")
-                }, navigationIcon = {
-                    IconButton(onClick = { coroutineScope.launch { drawerState.open(windowSize) } }) {
-                        Icon(Icons.Default.Menu, contentDescription = "菜单")
-                    }
-                }, scrollBehavior = scrollBehavior
-                )
-            }) { padding ->
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            Text("FuckJY")
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { coroutineScope.launch { drawerState.open(windowSize) } }) {
+                                Icon(Icons.Default.Menu, contentDescription = "菜单")
+                            }
+                        },
+                        scrollBehavior = scrollBehavior
+                    )
+                }) { padding ->
                 Box(Modifier.padding(padding)) {
                     Crossfade(
                         currentPage, modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
@@ -114,6 +128,7 @@ fun App(
      */
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PasswordOperation() {
     var input by remember { mutableStateOf("") }
@@ -155,38 +170,24 @@ fun PasswordOperation() {
     }
 
     fun set() {
-        val vbsFile = File(System.getProperty("java.io.tmpdir"), "set-fuckjy.tmp.vbs").apply {
-            deleteOnExit()
-            try {
-                writeText(
-                    "Set objShell = CreateObject(\"Shell.Application\")\n" +
-                            "objShell.ShellExecute \"cmd\", \"/c reg add " +
-                            "\"\"HKLM\\SOFTWARE\\TopDomain\\e-Learning Class\\Student\"\" /v Knock1 /t REG_BINARY /d " +
-                            "${encrypt(input)} /f /reg:32 > ${System.getProperty("java.io.tmpdir")}result-fuckjy 2> " +
-                            "${System.getProperty("java.io.tmpdir")}error-fuckjy\", \"\", " + "\"runas\", 0"
-                )
-            } catch (e: Throwable) {
-                result = "出现未知错误\n${e.message}\n${e.stackTrace}"
-                isError = true
-                showResult = true
-                return
-            }
-        }
-        ProcessBuilder(
-            "CScript", vbsFile.absolutePath
-        ).start().apply { waitFor() }.errorStream.bufferedReader(Charset.forName("GBK")).readText().trim().let {
-            if (it.isNotBlank()) {
-                result = it
-                isError = true
-                showResult = true
-                return
-            }
-        }
-        vbsFile.delete()
-        File(System.getProperty("java.io.tmpdir"), "error-fuckjy").apply {
-            deleteOnExit()
-            if (exists()) {
-                readText(Charset.forName("GBK")).trim().let {
+        val vbsFile = File.createTempFile("fuckjy-set", ".tmp.vbs").apply { deleteOnExit() }
+        val errorStreamFileName = "fuckjy-set-error-stream"
+        val standardStreamFileName = "fuckjy-set-standard-stream"
+        val outputStreamFileSuffix = ".tmp.txt"
+        val errorStreamFile = File.createTempFile(errorStreamFileName, outputStreamFileSuffix).apply { deleteOnExit() }
+        val standardStreamFile = File.createTempFile(standardStreamFileName, outputStreamFileSuffix)
+            .apply { deleteOnExit() }
+        try {
+            val process = elevatedProcess(
+                "cmd",
+                "/c reg add \"\"HKLM\\SOFTWARE\\TopDomain\\e-Learning Class\\Student\"\" " +
+                        "/v Knock1 /t REG_BINARY /d ${encrypt(input)} /f /reg:32 " +
+                        "> ${standardStreamFile.absolutePath} 2> ${errorStreamFile.absolutePath}",
+                vbsFile
+            ).start()
+            process.waitFor()
+            process.errorStream.bufferedReader(Charset.forName("GBK"))
+                .readText().trim().let {
                     if (it.isNotBlank()) {
                         result = it
                         isError = true
@@ -194,15 +195,34 @@ fun PasswordOperation() {
                         return
                     }
                 }
+        } catch (e: Throwable) {
+            result = "出现未知错误\n${e.message}\n${e.stackTrace}"
+            isError = true
+            showResult = true
+            return
+        }
+        vbsFile.delete()
+        isError = false
+        errorStreamFile.apply {
+            if (exists()) {
+                readText(Charset.forName("GBK")).trim().let {
+                    if (it.isNotBlank()) {
+                        result = it
+                        Log.info(result)
+                        isError = true
+                        showResult = true
+                    }
+                }
                 delete()
             }
         }
-        File(System.getProperty("java.io.tmpdir"), "result-fuckjy").apply {
-            deleteOnExit()
+        standardStreamFile.apply {
             if (exists()) {
-                result = readText(Charset.forName("GBK")).trim()
-                isError = false
-                showResult = true
+                if (!isError) {
+                    result = readText(Charset.forName("GBK")).trim()
+                    println(result)
+                    showResult = true
+                }
                 delete()
             }
         }
@@ -301,8 +321,8 @@ fun encrypt(input: String): String {
 
 @Composable
 fun ProcessOperation() {
-    val killProcess = {
-
+    fun kill() {
+        elevatedProcess("taskkill", "/f /im StudentMain.exe").start()
     }
 
     Box(
@@ -310,12 +330,12 @@ fun ProcessOperation() {
         contentAlignment = Alignment.Center
     ) {
         Button(
-            onClick = killProcess, colors = ButtonDefaults.buttonColors(
+            onClick = ::kill, colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.error
             )
         ) {
-            Text("杀死极域（WIP）")
+            Text("杀死极域")
         }
     }
 }

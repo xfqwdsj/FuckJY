@@ -46,13 +46,14 @@ compose.desktop {
     application {
         mainClass = "MainKt"
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "FuckJY"
             packageVersion = version.toString()
             windows {
                 shortcut = true
                 upgradeUuid = "96c7e128-6738-469c-a9fe-ddc46ef0204f"
             }
+            appResourcesRootDir.set(project.layout.projectDirectory.dir("raw"))
         }
     }
 }
