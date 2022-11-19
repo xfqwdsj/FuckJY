@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.AlertDialog
+import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
@@ -18,19 +20,37 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import org.jetbrains.skia.impl.Log
+import kotlinx.coroutines.withContext
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.io.File
-import java.nio.charset.Charset
 import kotlin.experimental.xor
+import kotlin.system.exitProcess
 
-@OptIn(ExperimentalMaterial3Api::class)
+val helper: String = File(
+    System.getProperty("compose.application.resources.dir"),
+    "RegistryHelper.exe"
+).absolutePath
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
 fun App(
     windowSize: WindowSize
 ) {
+    var showElevationDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            try {
+                ProcessBuilder(helper).start().waitFor()
+            } catch (e: Throwable) {
+                showElevationDialog = true
+            }
+        }
+    }
+
     val coroutineScope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
@@ -107,6 +127,32 @@ fun App(
                 }
             }
         }
+
+        if (showElevationDialog) {
+            AlertDialog(
+                onDismissRequest = {},
+                confirmButton = {
+                    Button(onClick = {
+                        ProcessBuilder(
+                            File(
+                                System.getProperty("compose.application.resources.dir"), "Elevator.exe"
+                            ).absolutePath
+                        ).start()
+                        exitProcess(0)
+                    }) {
+                        Text("确定")
+                    }
+                },
+                dismissButton = {
+                    Button(onClick = { showElevationDialog = false }) {
+                        Text("取消")
+                    }
+                },
+                text = {
+                    Text("FuckJY 核心功能启用失败，是否要尝试使用管理员权限重启本程序？")
+                }
+            )
+        }
     }
 
     /*
@@ -156,76 +202,20 @@ fun PasswordOperation() {
     }
 
     fun encrypt() {
+        println(System.getProperties())
         result = encrypt(input)
         isError = false
         showResult = true
     }
 
     fun get() {
-        input = ProcessBuilder(
-            "reg", "query", "HKLM\\SOFTWARE\\TopDomain\\e-Learning Class\\Student", "/v", "Knock1", "/reg:32"
-        ).start().apply { waitFor() }.inputStream.bufferedReader().readText().substring(94)
-            .substringBefore('\n').run { substring(0, length - 1) }
+        input = ProcessBuilder(helper).start().apply { waitFor() }.inputStream.bufferedReader().readText().trim()
         decrypt()
     }
 
     fun set() {
-        val vbsFile = File.createTempFile("fuckjy-set", ".tmp.vbs").apply { deleteOnExit() }
-        val errorStreamFileName = "fuckjy-set-error-stream"
-        val standardStreamFileName = "fuckjy-set-standard-stream"
-        val outputStreamFileSuffix = ".tmp.txt"
-        val errorStreamFile = File.createTempFile(errorStreamFileName, outputStreamFileSuffix).apply { deleteOnExit() }
-        val standardStreamFile = File.createTempFile(standardStreamFileName, outputStreamFileSuffix)
-            .apply { deleteOnExit() }
-        try {
-            val process = elevatedProcess(
-                "cmd",
-                "/c reg add \"\"HKLM\\SOFTWARE\\TopDomain\\e-Learning Class\\Student\"\" " +
-                        "/v Knock1 /t REG_BINARY /d ${encrypt(input)} /f /reg:32 " +
-                        "> ${standardStreamFile.absolutePath} 2> ${errorStreamFile.absolutePath}",
-                vbsFile
-            ).start()
-            process.waitFor()
-            process.errorStream.bufferedReader(Charset.forName("GBK"))
-                .readText().trim().let {
-                    if (it.isNotBlank()) {
-                        result = it
-                        isError = true
-                        showResult = true
-                        return
-                    }
-                }
-        } catch (e: Throwable) {
-            result = "出现未知错误\n${e.message}\n${e.stackTrace}"
-            isError = true
-            showResult = true
-            return
-        }
-        vbsFile.delete()
-        isError = false
-        errorStreamFile.apply {
-            if (exists()) {
-                readText(Charset.forName("GBK")).trim().let {
-                    if (it.isNotBlank()) {
-                        result = it
-                        Log.info(result)
-                        isError = true
-                        showResult = true
-                    }
-                }
-                delete()
-            }
-        }
-        standardStreamFile.apply {
-            if (exists()) {
-                if (!isError) {
-                    result = readText(Charset.forName("GBK")).trim()
-                    println(result)
-                    showResult = true
-                }
-                delete()
-            }
-        }
+        result = ProcessBuilder(helper, encrypt(input))
+            .start().apply { waitFor() }.inputStream.bufferedReader().readText().trim()
     }
 
     fun replace() {
@@ -322,7 +312,7 @@ fun encrypt(input: String): String {
 @Composable
 fun ProcessOperation() {
     fun kill() {
-        elevatedProcess("taskkill", "/f /im StudentMain.exe").start()
+        ProcessBuilder("taskkill", "/f", "/im", "StudentMain.exe").start()
     }
 
     Box(
@@ -337,14 +327,6 @@ fun ProcessOperation() {
         ) {
             Text("杀死极域")
         }
-    }
-}
-
-fun main() = application {
-    Window(onCloseRequest = ::exitApplication, title = "FuckJY") {
-        App(
-            windowSize = window.rememberWindowSize()
-        )
     }
 }
 
@@ -390,4 +372,12 @@ suspend inline fun DrawerState.open(windowSize: WindowSize) {
     //if (windowSize == WindowSize.Compact) {
     open()
     //}
+}
+
+fun main() = application {
+    Window(onCloseRequest = ::exitApplication, title = "FuckJY") {
+        App(
+            windowSize = window.rememberWindowSize()
+        )
+    }
 }

@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "xyz.xfqlittlefan"
-version = "1.0.2"
+version = "1.0.3"
 
 repositories {
     google()
