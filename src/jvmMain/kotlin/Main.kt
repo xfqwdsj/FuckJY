@@ -214,8 +214,16 @@ fun PasswordOperation() {
     }
 
     fun set() {
-        result = ProcessBuilder(helper, encrypt(input))
-            .start().apply { waitFor() }.inputStream.bufferedReader().readText().trim()
+        val process = ProcessBuilder(helper, encrypt(input))
+            .start().apply { waitFor() }
+        if (process.exitValue() != 0) {
+            result = process.errorStream.bufferedReader().readText().trim()
+            isError = true
+        } else {
+            result = "设置成功"
+            isError = false
+        }
+        showResult = true
     }
 
     fun replace() {
