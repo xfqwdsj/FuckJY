@@ -1,12 +1,8 @@
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.AlertDialog
-import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
@@ -20,9 +16,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.io.File
@@ -34,23 +28,11 @@ val helper: String = File(
     "RegistryHelper.exe"
 ).absolutePath
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(
     windowSize: WindowSize
 ) {
-    var showElevationDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
-            try {
-                ProcessBuilder(helper).start().waitFor()
-            } catch (e: Throwable) {
-                showElevationDialog = true
-            }
-        }
-    }
-
     val coroutineScope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
@@ -114,44 +96,17 @@ fun App(
                         },
                         scrollBehavior = scrollBehavior
                     )
-                }) { padding ->
+                }
+            ) { padding ->
                 Box(Modifier.padding(padding)) {
-                    Crossfade(
-                        currentPage, modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
-                    ) { page ->
+                    Crossfade(currentPage) { page ->
                         when (page) {
-                            0 -> PasswordOperation()
-                            1 -> ProcessOperation()
+                            0 -> PasswordOperation(scrollBehavior)
+                            1 -> ProcessOperation(scrollBehavior)
                         }
                     }
                 }
             }
-        }
-
-        if (showElevationDialog) {
-            AlertDialog(
-                onDismissRequest = {},
-                confirmButton = {
-                    Button(onClick = {
-                        ProcessBuilder(
-                            File(
-                                System.getProperty("compose.application.resources.dir"), "Elevator.exe"
-                            ).absolutePath
-                        ).start()
-                        exitProcess(0)
-                    }) {
-                        Text("确定")
-                    }
-                },
-                dismissButton = {
-                    Button(onClick = { showElevationDialog = false }) {
-                        Text("取消")
-                    }
-                },
-                text = {
-                    Text("FuckJY 核心功能启用失败，是否要尝试使用管理员权限重启本程序？")
-                }
-            )
         }
     }
 
@@ -176,11 +131,12 @@ fun App(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PasswordOperation() {
+fun PasswordOperation(scrollBehavior: TopAppBarScrollBehavior) {
     var input by remember { mutableStateOf("") }
     var showResult by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf("") }
     var isError by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
 
     fun decrypt() {
         if (input.length % 8 != 0) {
@@ -232,51 +188,57 @@ fun PasswordOperation() {
         showResult = false
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        TextField(value = input, onValueChange = { input = it })
-        Spacer(Modifier.height(16.dp))
-        Row {
-            Button(onClick = ::decrypt) {
-                Text("解密")
-            }
-            Spacer(Modifier.width(16.dp))
-            Button(onClick = ::encrypt) {
-                Text("加密")
-            }
-            Spacer(Modifier.width(16.dp))
-            Button(onClick = ::get) {
-                Text("直接获取密码")
-            }
-            Spacer(Modifier.width(16.dp))
-            Button(onClick = ::set) {
-                Text("直接设置密码")
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-        AnimatedVisibility(
-            visible = showResult
+    Box(Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)) {
+        Column(
+            modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                SelectionContainer {
-                    Text(
-                        result,
-                        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                    )
+            TextField(value = input, onValueChange = { input = it })
+            Spacer(Modifier.height(16.dp))
+            Row {
+                Button(onClick = ::decrypt) {
+                    Text("解密")
                 }
-                Spacer(Modifier.height(16.dp))
-                AnimatedVisibility(
-                    visible = !isError
-                ) {
-                    Button(onClick = ::replace) {
-                        Text("替换到输入框")
+                Spacer(Modifier.width(16.dp))
+                Button(onClick = ::encrypt) {
+                    Text("加密")
+                }
+                Spacer(Modifier.width(16.dp))
+                Button(onClick = ::get) {
+                    Text("直接获取密码")
+                }
+                Spacer(Modifier.width(16.dp))
+                Button(onClick = ::set) {
+                    Text("直接设置密码")
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            AnimatedVisibility(
+                visible = showResult
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    SelectionContainer {
+                        Text(
+                            result,
+                            color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    AnimatedVisibility(
+                        visible = !isError
+                    ) {
+                        Button(onClick = ::replace) {
+                            Text("替换到输入框")
+                        }
                     }
                 }
             }
         }
+        VerticalScrollbar(
+            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+            adapter = rememberScrollbarAdapter(scrollState)
+        )
     }
 }
 
@@ -317,14 +279,16 @@ fun encrypt(input: String): String {
     return result
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProcessOperation() {
+fun ProcessOperation(scrollBehavior: TopAppBarScrollBehavior) {
     fun kill() {
         ProcessBuilder("taskkill", "/f", "/im", "StudentMain.exe").start()
     }
 
     Box(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .nestedScroll(scrollBehavior.nestedScrollConnection).padding(16.dp),
         contentAlignment = Alignment.Center
     ) {
         Button(
@@ -382,10 +346,25 @@ suspend inline fun DrawerState.open(windowSize: WindowSize) {
     //}
 }
 
-fun main() = application {
-    Window(onCloseRequest = ::exitApplication, title = "FuckJY") {
-        App(
-            windowSize = window.rememberWindowSize()
-        )
+fun main(vararg args: String) {
+    if (!args.contains("admin")) {
+        try {
+            ProcessBuilder(helper).start().waitFor()
+        } catch (e: Throwable) {
+            ProcessBuilder(
+                File(
+                    System.getProperty("compose.application.resources.dir"), "Elevator.exe"
+                ).absolutePath
+            ).start()
+            exitProcess(0)
+        }
+    }
+
+    application {
+        Window(onCloseRequest = ::exitApplication, title = "FuckJY") {
+            App(
+                windowSize = window.rememberWindowSize()
+            )
+        }
     }
 }
