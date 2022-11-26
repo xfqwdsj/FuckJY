@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "xyz.xfqlittlefan"
-version = "1.0.4"
+version = "1.1.0"
 
 repositories {
     google()
@@ -36,6 +36,7 @@ kotlin {
                 implementation(compose.material3)
                 implementation(compose.runtime)
                 implementation(compose.ui)
+                implementation(compose.materialIconsExtended)
             }
         }
         val jvmTest by getting

@@ -1,5 +1,5 @@
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
+import WindowSize.*
+import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposeWindow
@@ -16,6 +17,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import composables.DEFAULT_PAGE
+import composables.Page
 import kotlinx.coroutines.launch
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
@@ -36,36 +39,49 @@ fun App(
     val coroutineScope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
-    var currentPage by remember { mutableStateOf(0) }
+    var currentPage by remember { mutableStateOf(DEFAULT_PAGE) }
 
-    val drawerContent: @Composable () -> Unit = {
-        ModalDrawerSheet {
-            Spacer(modifier = Modifier.height(12.dp))
-            NavigationDrawerItem(
-                label = {
-                    Text("密码处理")
-                },
-                selected = currentPage == 0, onClick = {
-                    currentPage = 0
-                    coroutineScope.launch {
-                        drawerState.close()
+    val page: @Composable () -> Unit = {
+        val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text("FuckJY")
+                    },
+                    navigationIcon = {
+                        AnimatedVisibility(
+                            visible = windowSize == Compact,
+                            enter = fadeIn() + expandHorizontally(),
+                            exit = fadeOut() + shrinkHorizontally()
+                        ) {
+                            IconButton(onClick = { coroutineScope.launch { drawerState.open(windowSize) } }) {
+                                Icon(Icons.Default.Menu, contentDescription = "菜单")
+                            }
+                        }
+                    },
+                    scrollBehavior = scrollBehavior
+                )
+            }
+        ) { padding ->
+            Row(Modifier.padding(padding)) {
+                AnimatedVisibility(
+                    visible = windowSize == Medium
+                ) {
+                    NavigationRail {
+                        Page.values().forEach { page ->
+                            page.RailItem(currentPage) { currentPage = it }
+                        }
                     }
-                },
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-            )
-            NavigationDrawerItem(
-                label = {
-                    Text("进程操作")
-                },
-                selected = currentPage == 1,
-                onClick = {
-                    currentPage = 1
-                    coroutineScope.launch {
-                        drawerState.close()
+                }
+                Crossfade(currentPage) { page ->
+                    when (page) {
+                        Page.PasswordOperation -> PasswordOperation.Content(scrollBehavior)
+                        Page.ProcessOperation -> ProcessOperation.Content(scrollBehavior)
                     }
-                },
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-            )
+                }
+            }
         }
     }
 
@@ -76,169 +92,165 @@ fun App(
             lightColorScheme()
         }
     ) {
-        ModalNavigationDrawer(
-            drawerContent = drawerContent,
-            drawerState = drawerState,
-            //gesturesEnabled = windowSize == WindowSize.Compact
-        ) {
-            val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = {
-                            Text("FuckJY")
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = { coroutineScope.launch { drawerState.open(windowSize) } }) {
-                                Icon(Icons.Default.Menu, contentDescription = "菜单")
-                            }
-                        },
-                        scrollBehavior = scrollBehavior
-                    )
-                }
-            ) { padding ->
-                Box(Modifier.padding(padding)) {
-                    Crossfade(currentPage) { page ->
-                        when (page) {
-                            0 -> PasswordOperation(scrollBehavior)
-                            1 -> ProcessOperation(scrollBehavior)
+        PermanentNavigationDrawer(
+            drawerContent = {
+                AnimatedVisibility(
+                    visible = windowSize == Expanded,
+                    enter = fadeIn() + expandHorizontally(),
+                    exit = fadeOut() + shrinkHorizontally()
+                ) {
+                    PermanentDrawerSheet {
+                        Spacer(Modifier.height(12.dp))
+                        Page.values().forEach { page ->
+                            page.DrawerItem(currentPage) { currentPage = it }
                         }
                     }
                 }
             }
+        ) {
+            ModalNavigationDrawer(
+                drawerContent = {
+                    ModalDrawerSheet {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Page.values().forEach { page ->
+                            page.ModalDrawerItem(drawerState, currentPage) { currentPage = it }
+                        }
+                    }
+                },
+                drawerState = drawerState,
+                gesturesEnabled = windowSize == Compact,
+                content = page
+            )
         }
     }
 
-    /*
     LaunchedEffect(windowSize) {
         when (windowSize) {
-            WindowSize.Compact -> {
+            Compact -> {}
 
-            }
-
-            WindowSize.Medium -> {
+            Medium -> {
                 drawerState.close()
             }
 
-            WindowSize.Expanded -> {
+            Expanded -> {
                 drawerState.close()
             }
         }
     }
-     */
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PasswordOperation(scrollBehavior: TopAppBarScrollBehavior) {
-    var input by remember { mutableStateOf("") }
-    var showResult by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf("") }
-    var isError by remember { mutableStateOf(false) }
-    val scrollState = rememberScrollState()
+object PasswordOperation {
+    private var input by mutableStateOf("")
+    private var showResult by mutableStateOf(false)
+    private var result by mutableStateOf("")
+    private var isError by mutableStateOf(false)
+    private val scrollState = ScrollState(0)
 
-    fun decrypt() {
-        if (input.length % 8 != 0) {
-            result = "输入长度必须为 8 的倍数"
-            isError = true
-        } else {
-            try {
-                result = decrypt(input)
-                isError = false
-            } catch (e: NumberFormatException) {
-                result = "输入必须为有效的 16 进制数字\n${e.message}".trim()
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    fun Content(scrollBehavior: TopAppBarScrollBehavior) {
+        fun decrypt() {
+            if (input.length % 8 != 0) {
+                result = "输入长度必须为 8 的倍数"
                 isError = true
-            } catch (e: Throwable) {
-                result = "出现未知错误\n${e.message}\n${e.stackTrace}".trim()
-                isError = true
+            } else {
+                try {
+                    result = decrypt(input)
+                    isError = false
+                } catch (e: NumberFormatException) {
+                    result = "输入必须为有效的 16 进制数字\n${e.message}".trim()
+                    isError = true
+                } catch (e: Throwable) {
+                    result = "出现未知错误\n${e.message}\n${e.stackTrace}".trim()
+                    isError = true
+                }
             }
+            showResult = true
         }
-        showResult = true
-    }
 
-    fun encrypt() {
-        println(System.getProperties())
-        result = encrypt(input)
-        isError = false
-        showResult = true
-    }
-
-    fun get() {
-        input = ProcessBuilder(helper).start().apply { waitFor() }.inputStream.bufferedReader().readText().trim()
-        decrypt()
-    }
-
-    fun set() {
-        val process = ProcessBuilder(helper, encrypt(input))
-            .start().apply { waitFor() }
-        if (process.exitValue() != 0) {
-            result = process.errorStream.bufferedReader().readText().trim()
-            isError = true
-        } else {
-            result = "设置成功"
+        fun encrypt() {
+            println(System.getProperties())
+            result = encrypt(input)
             isError = false
+            showResult = true
         }
-        showResult = true
-    }
 
-    fun replace() {
-        if (isError) return
-        input = result
-        showResult = false
-    }
+        fun get() {
+            input = ProcessBuilder(helper).start().apply { waitFor() }.inputStream.bufferedReader().readText().trim()
+            decrypt()
+        }
 
-    Box(Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)) {
-        Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(16.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            TextField(value = input, onValueChange = { input = it })
-            Spacer(Modifier.height(16.dp))
-            Row {
-                Button(onClick = ::decrypt) {
-                    Text("解密")
-                }
-                Spacer(Modifier.width(16.dp))
-                Button(onClick = ::encrypt) {
-                    Text("加密")
-                }
-                Spacer(Modifier.width(16.dp))
-                Button(onClick = ::get) {
-                    Text("直接获取密码")
-                }
-                Spacer(Modifier.width(16.dp))
-                Button(onClick = ::set) {
-                    Text("直接设置密码")
-                }
+        fun set() {
+            val process = ProcessBuilder(helper, encrypt(input))
+                .start().apply { waitFor() }
+            if (process.exitValue() != 0) {
+                result = process.errorStream.bufferedReader().readText().trim()
+                isError = true
+            } else {
+                result = "设置成功"
+                isError = false
             }
-            Spacer(Modifier.height(16.dp))
-            AnimatedVisibility(
-                visible = showResult
+            showResult = true
+        }
+
+        fun replace() {
+            if (isError) return
+            input = result
+            showResult = false
+        }
+
+        Box(Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)) {
+            Column(
+                modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(16.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    SelectionContainer {
-                        Text(
-                            result,
-                            color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                        )
+                TextField(value = input, onValueChange = { input = it })
+                Spacer(Modifier.height(16.dp))
+                Row {
+                    Button(onClick = ::decrypt) {
+                        Text("解密")
                     }
-                    Spacer(Modifier.height(16.dp))
-                    AnimatedVisibility(
-                        visible = !isError
-                    ) {
-                        Button(onClick = ::replace) {
-                            Text("替换到输入框")
+                    Spacer(Modifier.width(16.dp))
+                    Button(onClick = ::encrypt) {
+                        Text("加密")
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Button(onClick = ::get) {
+                        Text("直接获取密码")
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Button(onClick = ::set) {
+                        Text("直接设置密码")
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                AnimatedVisibility(
+                    visible = showResult
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        SelectionContainer {
+                            Text(
+                                result,
+                                color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        AnimatedVisibility(
+                            visible = !isError
+                        ) {
+                            Button(onClick = ::replace) {
+                                Text("替换到输入框")
+                            }
                         }
                     }
                 }
             }
+            VerticalScrollbar(
+                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
+                adapter = rememberScrollbarAdapter(scrollState)
+            )
         }
-        VerticalScrollbar(
-            modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(),
-            adapter = rememberScrollbarAdapter(scrollState)
-        )
     }
 }
 
@@ -279,27 +291,32 @@ fun encrypt(input: String): String {
     return result
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ProcessOperation(scrollBehavior: TopAppBarScrollBehavior) {
-    fun kill() {
-        ProcessBuilder("taskkill", "/f", "/im", "StudentMain.exe").start()
-    }
+object ProcessOperation {
+    private val scrollState = ScrollState(0)
 
-    Box(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .nestedScroll(scrollBehavior.nestedScrollConnection).padding(16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Button(
-            onClick = ::kill, colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.error
-            )
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    fun Content(scrollBehavior: TopAppBarScrollBehavior) {
+        fun kill() {
+            ProcessBuilder("taskkill", "/f", "/im", "StudentMain.exe").start()
+        }
+
+        Box(
+            modifier = Modifier.fillMaxSize().verticalScroll(scrollState)
+                .nestedScroll(scrollBehavior.nestedScrollConnection).padding(16.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Text("杀死极域")
+            Button(
+                onClick = ::kill, colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("杀死极域")
+            }
         }
     }
+
 }
 
 fun String.toHex(): ByteArray {
@@ -310,7 +327,7 @@ fun String.toHex(): ByteArray {
 @Composable
 fun ComposeWindow.rememberWindowSize(): WindowSize {
     with(LocalDensity.current) {
-        var state by remember { mutableStateOf(width.toDp().toWindowSize()) }
+        var state by rememberSaveable { mutableStateOf(width.toDp().toWindowSize()) }
 
         val listener = object : ComponentAdapter() {
             override fun componentResized(e: ComponentEvent) {
@@ -330,9 +347,9 @@ fun ComposeWindow.rememberWindowSize(): WindowSize {
 }
 
 fun Dp.toWindowSize() = when {
-    this < 600.dp -> WindowSize.Compact
-    this < 840.dp -> WindowSize.Medium
-    else -> WindowSize.Expanded
+    this < 600.dp -> Compact
+    this < 840.dp -> Medium
+    else -> Expanded
 }
 
 enum class WindowSize {
@@ -341,9 +358,9 @@ enum class WindowSize {
 
 @OptIn(ExperimentalMaterial3Api::class)
 suspend inline fun DrawerState.open(windowSize: WindowSize) {
-    //if (windowSize == WindowSize.Compact) {
-    open()
-    //}
+    if (windowSize == Compact) {
+        open()
+    }
 }
 
 fun main(vararg args: String) {
